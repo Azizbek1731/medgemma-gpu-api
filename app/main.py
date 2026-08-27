@@ -412,53 +412,18 @@ def api_engines() -> dict:
     }
 
 
-@app.post("/api/engines/load")
-def api_engine_load(payload: dict = Body(...)) -> dict:
-    key = payload.get("engine", "")
-    model_id = payload.get("model_id", "")
-    if settings.local_only and is_remote(key):
-        raise HTTPException(403, "MG_LOCAL_ONLY yoqilgan — tarmoq engine'lari o'chirilgan.")
-    try:
-        engine = get_engine(key, model_id, autoload=True)
-    except EngineError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(500, f"Yuklashda xato: {exc}") from exc
-    info = engine.info()
-    return {
-        "engine": info.key,
-        "model_id": info.model_id,
-        "device": info.device,
-        "loaded": info.loaded,
-    }
-
-
-@app.post("/api/engines/unload")
-def api_engine_unload() -> dict:
-    from .engines import unload_current
-
-    unload_current()
-    return {"unloaded": True}
-
-
 @app.get("/api/templates")
 def api_templates(modality: str = Query("")) -> list[dict]:
     return prompts.list_templates(modality)
 
 
-@app.post("/api/prompt-check")
-def api_prompt_check(payload: dict = Body(...)) -> dict:
-    """Warn about identifiers in free text before it is sent anywhere."""
-    text = " ".join(str(v) for v in payload.values() if isinstance(v, str))
-    return {"warnings": deid.scan_free_text(text)}
-
-
 # --------------------------------------------------------------------------------------
-# inference
+# inferens
 # --------------------------------------------------------------------------------------
 
 
 def _sse(event: str, data: Any) -> str:
+    """Bitta SSE blokini yasaydi: `event:` + `data:` + bo'sh qator."""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
@@ -727,7 +692,8 @@ def api_batch(payload: dict = Body(...)) -> StreamingResponse:
     do_synthesis = bool(payload.get("synthesis", True)) and len(plan.jobs) > 1
     window = payload.get("window") or {}
     per_window: dict = payload.get("series_window") or {}
-    max_new_tokens = int(payload.get("max_new_tokens") or 700)
+    max_new_tokens = min(int(payload.get("max_new_tokens") or 700),
+                         settings.max_new_tokens)   # mijoz GPU\'ni cheksiz band qila olmasin
     temperature = float(payload.get("temperature", settings.temperature))
     extra_context = str(payload.get("extra_context", "") or "")
 

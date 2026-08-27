@@ -150,12 +150,21 @@ def main() -> int:
     print("\n3 · Model va GPU")
     with req("/api/engines", timeout=30) as r:
         eng = json.load(r)
-    avail = [e for e in eng.get("engines", []) if e.get("available")]
+    engines = eng.get("engines", [])
+    avail = [e for e in engines if e.get("available")]
     check("to'g'ri kalit ishladi", True)
     check("mavjud engine bor", bool(avail), ", ".join(e["key"] for e in avail) or "yo'q")
     gpu = next((e for e in avail if e["key"] == "transformers"), None)
-    check("GPU (transformers) tayyor", gpu is not None,
-          gpu["default_model"] if gpu else "faqat mock — GPU sozlanmagan")
+    if gpu:
+        check("GPU (transformers) tayyor", True, gpu["default_model"])
+    else:
+        # Sababni KO'RSATAMIZ — operator nima qilishini bilishi kerak
+        # ("torch o'rnatilmagan", "CUDA topilmadi", "model yuklab bo'lmadi"...).
+        tr = next((e for e in engines if e["key"] == "transformers"), None)
+        check("GPU (transformers) tayyor", False,
+              (tr or {}).get("reason") or "transformers engine ro'yxatda yo'q")
+        print("      → Servis MOCK rejimida ishlaydi: javob SOXTA, klinik "
+              "ma'noga ega emas.")
     check("local_only yoqilgan (PHI himoyasi)", eng.get("local_only") is True)
 
     # 4. DICOM pipeline

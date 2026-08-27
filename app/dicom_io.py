@@ -7,6 +7,7 @@ CT archive indexes in seconds; pixel data is pulled lazily by :mod:`app.renderin
 from __future__ import annotations
 
 import logging
+import os
 import math
 import shutil
 import zipfile
@@ -123,31 +124,78 @@ class IngestReport:
 # --------------------------------------------------------------------------------------
 
 
-def _safe_extract(zf: zipfile.ZipFile, dest: Path, max_files: int) -> int:
-    """Extract ``zf`` into ``dest``, refusing path traversal ("zip slip") entries."""
+def _max_uncompressed_bytes() -> int:
+    """
+    Ochilgandan keyingi umumiy hajm chegarasi (zip-bomba himoyasi).
+
+    Zip-slip allaqachon to'silgan, ammo CHIQISH HAJMI cheklanmagan edi: 1 MB lik
+    arxiv o'nlab gigabaytga ochilib, diskni to'ldirishi mumkin. Ochiq servisda
+    bu eng oson hujum, shuning uchun umumiy va bitta fayl uchun chegara qo'yamiz.
+    """
+    try:
+        return max(1, int(os.getenv("MG_MAX_UNCOMPRESSED_MB", "2048"))) * 1024 * 1024
+    except ValueError:
+        return 2048 * 1024 * 1024
+
+
+def _safe_extract(zf: zipfile.ZipFile, dest: Path, max_files: int,
+                  budget: list | None = None) -> int:
+    """
+    ``zf`` ni ``dest`` ga ochadi; yo'l bo'yicha chiqish ("zip slip") va
+    ochilgan hajm (zip-bomba) bo'yicha himoyalangan.
+
+    `budget` — [qolgan_fayl, qolgan_bayt] ro'yxati. Ichma-ich arxivlarga AYNAN
+    shu ro'yxat uzatiladi, shunda chegara butun daraxt bo'ylab umumiy bo'ladi
+    (aks holda har bir ichki arxiv chegarani noldan boshlardi).
+    """
     dest = dest.resolve()
+    if budget is None:
+        budget = [max_files, _max_uncompressed_bytes()]
     count = 0
     for info in zf.infolist():
         if info.is_dir():
             continue
-        count += 1
-        if count > max_files:
+        budget[0] -= 1
+        if budget[0] < 0:
             raise ValueError(f"ZIP contains more than {max_files} files; aborting.")
+        # E'lon qilingan hajm bo'yicha oldindan rad etamiz (yozishdan oldin)
+        if info.file_size > budget[1]:
+            raise ValueError("ZIP ochilganda hajm chegarasidan oshadi (zip-bomba?).")
+        count += 1
         target = (dest / info.filename).resolve()
         if not str(target).startswith(str(dest) + "/") and target != dest:
             log.warning("Skipping unsafe zip entry: %s", info.filename)
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
+        written = 0
         with zf.open(info) as src, open(target, "wb") as out:
-            shutil.copyfileobj(src, out)
+            while True:
+                chunk = src.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                # E'lon qilingan hajm yolg'on bo'lishi mumkin — YOZILGANINI sanaymiz
+                if written > budget[1]:
+                    out.close()
+                    target.unlink(missing_ok=True)
+                    raise ValueError("ZIP ochilganda hajm chegarasidan oshdi (zip-bomba?).")
+                out.write(chunk)
+        budget[1] -= written
     return count
 
 
-def extract_archive(archive: Path, dest: Path, max_files: int = 100_000) -> int:
-    """Extract a ZIP (recursively, for nested ZIPs) into ``dest``. Returns file count."""
+def extract_archive(archive: Path, dest: Path, max_files: int = 20_000) -> int:
+    """
+    ZIP ni ``dest`` ga ochadi (ichma-ich arxivlar uchun bir daraja rekursiya).
+
+    Fayl soni va ochilgan hajm chegarasi BUTUN DARAXT bo'ylab UMUMIY: bitta
+    `budget` ro'yxati ichki arxivlarga ham uzatiladi. Aks holda "matryoshka"
+    arxiv har bosqichda chegarani noldan boshlab, uni chetlab o'tardi.
+    """
     dest.mkdir(parents=True, exist_ok=True)
+    budget = [max_files, _max_uncompressed_bytes()]
     with zipfile.ZipFile(archive) as zf:
-        total = _safe_extract(zf, dest, max_files)
+        total = _safe_extract(zf, dest, max_files, budget)
 
     # Recurse one level into nested archives (common with PACS exports).
     nested = [p for p in dest.rglob("*.zip") if p.is_file()]
@@ -155,7 +203,7 @@ def extract_archive(archive: Path, dest: Path, max_files: int = 100_000) -> int:
         sub = n.with_suffix("")
         try:
             with zipfile.ZipFile(n) as zf:
-                total += _safe_extract(zf, sub, max_files)
+                total += _safe_extract(zf, sub, max_files, budget)
             n.unlink()
         except Exception as exc:  # pragma: no cover - corrupt nested zip
             log.warning("Nested zip failed (%s): %s", n.name, exc)
@@ -349,11 +397,36 @@ def index_directory(root: Path, report: IngestReport | None = None) -> list[Stud
     return ordered
 
 
-def studies_to_json(studies: list[StudyMeta]) -> list[dict]:
+# Manifestdan OLIB TASHLANADIGAN maydonlar.
+#
+# NIMA UCHUN: bu servis ijaradagi GPU mashinasida turadi. Manifest
+# POST /api/upload va GET /api/uploads/{id} javoblarida qaytadi VA SQLite'ga
+# ochiq matnda yoziladi. Bemor ismi, ID, tug'ilgan sanasi va yo'llanma
+# shifokori bu yerda umuman kerak emas:
+#   - modelga baribir faqat ruxsat etilgan kontekst (yosh, jins, modallik)
+#     yuboriladi — deid.safe_clinical_context() orqali;
+#   - AviRadiolog viewer'i bu maydonlarni o'qimaydi (MgStudy interfeysiga qarang);
+#   - bemor kimligi asosiy tizimda, audit ostida saqlanadi.
+# Shuning uchun ular manbadayoq kesib tashlanadi — "yo'q ma'lumot sizib
+# chiqmaydi" tamoyili.
+_PHI_FIELDS = (
+    "patient_name",
+    "patient_id",
+    "patient_birth_date",
+    "accession_number",
+    "referring_physician",
+    "institution",
+)
+
+
+def studies_to_json(studies: list[StudyMeta], *, strip_phi: bool = True) -> list[dict]:
     out = []
     for st in studies:
         d = asdict(st)
         d["modalities"] = st.modalities
+        if strip_phi:
+            for f in _PHI_FIELDS:
+                d.pop(f, None)
         for s_dict, s_obj in zip(d["series"], st.series):
             s_dict["frame_count"] = s_obj.frame_count
             s_dict["is_image"] = s_obj.is_image

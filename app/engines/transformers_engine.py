@@ -91,17 +91,32 @@ class TransformersEngine(Engine):
         dtype = getattr(torch, self._dtype_name)
 
         log.info("Loading %s on %s (%s) ...", self.model_id, self._device, self._dtype_name)
+
+        # NEGA device_map: `from_pretrained(...)` keyin `.to(device)` modelni avval
+        # TO'LIQ CPU RAM'ga yuklaydi, so'ng GPU'ga ko'chiradi — ya'ni bir vaqtning
+        # o'zida ~2× xotira kerak bo'ladi va start sekinlashadi. `device_map` bilan
+        # accelerate og'irliklarni to'g'ridan-to'g'ri qatlam-qatlam GPU'ga joylaydi.
+        # accelerate bo'lmasa eski yo'lga qaytamiz.
+        kw = {"low_cpu_mem_usage": True}
+        try:
+            import accelerate  # noqa: F401
+            kw["device_map"] = self._device
+        except ImportError:
+            log.info("accelerate topilmadi — model avval CPU'ga yuklanadi.")
+
         try:
             # transformers >= 5 renamed torch_dtype -> dtype
             try:
                 model = AutoModelForImageTextToText.from_pretrained(
-                    self.model_id, dtype=dtype, low_cpu_mem_usage=True
+                    self.model_id, dtype=dtype, **kw
                 )
             except TypeError:
                 model = AutoModelForImageTextToText.from_pretrained(
-                    self.model_id, torch_dtype=dtype, low_cpu_mem_usage=True
+                    self.model_id, torch_dtype=dtype, **kw
                 )
-            self._model = model.to(self._device).eval()
+            if "device_map" not in kw:
+                model = model.to(self._device)
+            self._model = model.eval()
             self._processor = AutoProcessor.from_pretrained(self.model_id)
         except Exception as exc:  # noqa: BLE001
             raise EngineError(

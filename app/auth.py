@@ -21,12 +21,10 @@ DIZAYN
 from __future__ import annotations
 
 import hmac
+import json
 import logging
 import os
 
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import JSONResponse
 
 log = logging.getLogger(__name__)
 
@@ -41,44 +39,69 @@ def configured_keys() -> list[str]:
     return [k.strip() for k in raw.split(",") if k.strip()]
 
 
-def _extract(request: Request) -> str:
-    key = request.headers.get("x-api-key", "")
-    if key:
-        return key.strip()
-    auth = request.headers.get("authorization", "")
-    if auth.lower().startswith("bearer "):
-        return auth[7:].strip()
-    return ""
+class ApiKeyMiddleware:
+    """
+    Toza ASGI middleware — barcha so'rovlarni yopadi; faqat PUBLIC_PATHS ochiq.
 
+    NEGA BaseHTTPMiddleware EMAS: u javobni o'z ichida qayta o'raydi va
+    Starlette'ning ba'zi versiyalarida OQIM javoblarini (SSE) buferlab qo'yadi.
+    Bu servisning ikkita asosiy endpointi (/api/infer, /api/batch) aynan oqim
+    bilan ishlaydi, shuning uchun bu xavfni butunlay yo'q qilamiz: toza ASGI
+    middleware javobga umuman tegmaydi, faqat kirishda tekshiradi.
+    """
 
-class ApiKeyMiddleware(BaseHTTPMiddleware):
-    """Barcha so'rovlarni yopadi; faqat PUBLIC_PATHS ochiq."""
+    def __init__(self, app):
+        self.app = app
 
-    async def dispatch(self, request: Request, call_next):
-        path = request.url.path
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-        # CORS preflight — brauzer sarlavha qo'sha olmaydi, o'tkazamiz.
-        # (Javobda hech qanday ma'lumot bo'lmaydi.)
-        if request.method == "OPTIONS":
-            return await call_next(request)
+        path = scope.get("path", "")
+        method = scope.get("method", "")
 
-        if path in PUBLIC_PATHS:
-            return await call_next(request)
+        # CORS preflight — brauzer sarlavha qo'sha olmaydi.
+        if method == "OPTIONS" or path in PUBLIC_PATHS:
+            await self.app(scope, receive, send)
+            return
 
         keys = configured_keys()
         if not keys:
-            # Kalit sozlanmagan bo'lsa servis OCHIQ qolmaydi — to'xtaydi.
-            # "Xavfsiz standart": noto'g'ri konfiguratsiya sukut bilan
-            # himoyani o'chirib qo'ymasligi kerak.
+            # Xavfsiz standart: kalit sozlanmasa servis OCHIQ qolmaydi.
             log.error("MG_API_KEY sozlanmagan — barcha so'rovlar rad etilmoqda.")
-            return JSONResponse(
-                {"detail": "Servis sozlanmagan (API kalit yo'q)."}, status_code=503
-            )
+            await _deny(send, 503, "Servis sozlanmagan (API kalit yo'q).")
+            return
 
-        provided = _extract(request)
+        provided = _header(scope)
         if not provided or not any(hmac.compare_digest(provided, k) for k in keys):
             # Kalitning o'zi hech qachon logga yozilmaydi.
-            log.warning("Ruxsatsiz so'rov: %s %s", request.method, path)
-            return JSONResponse({"detail": "Noto'g'ri yoki yo'q API kalit."}, status_code=401)
+            log.warning("Ruxsatsiz so'rov: %s %s", method, path)
+            await _deny(send, 401, "Noto'g'ri yoki yo'q API kalit.")
+            return
 
-        return await call_next(request)
+        await self.app(scope, receive, send)
+
+
+def _header(scope) -> str:
+    """`X-API-Key` yoki `Authorization: Bearer <key>` dan kalitni oladi."""
+    for raw_name, raw_value in scope.get("headers", []):
+        name = raw_name.decode("latin-1").lower()
+        if name == "x-api-key":
+            return raw_value.decode("latin-1").strip()
+        if name == "authorization":
+            v = raw_value.decode("latin-1")
+            if v.lower().startswith("bearer "):
+                return v[7:].strip()
+    return ""
+
+
+async def _deny(send, status_code: int, detail: str) -> None:
+    body = json.dumps({"detail": detail}).encode()
+    await send({
+        "type": "http.response.start",
+        "status": status_code,
+        "headers": [(b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode())],
+    })
+    await send({"type": "http.response.body", "body": body})
