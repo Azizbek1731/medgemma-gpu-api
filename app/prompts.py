@@ -1,6 +1,6 @@
 """Radiology prompt templates.
 
-MedGemma is instruction-tuned but not a reporting product: the prompt does most of the
+The model is instruction-tuned but not a reporting product: the prompt does most of the
 work. These templates are the ones worth benchmarking against — a free-text "describe
 this" run tells you far less about clinical usefulness than a structured report or a
 forced binary call you can actually score.
@@ -39,7 +39,7 @@ TEMPLATES: list[PromptTemplate] = [
         key="cxr_report",
         label="Chest X-ray — full report",
         label_uz="Ko'krak qafasi rentgeni — to'liq xulosa",
-        description="FINDINGS + IMPRESSION, the format MedGemma was tuned to produce.",
+        description="FINDINGS + IMPRESSION, the format the model was tuned to produce.",
         system=RADIOLOGIST_SYSTEM,
         template=(
             "{context}\n\n"
@@ -120,7 +120,7 @@ TEMPLATES: list[PromptTemplate] = [
         key="question",
         label="Specific question (VQA)",
         label_uz="Aniq savol (VQA)",
-        description="Ask one targeted question — how MedGemma is usually benchmarked.",
+        description="Ask one targeted question — the usual benchmark format.",
         system=CAUTIOUS_SYSTEM,
         template="{context}\n\n{question}",
         variables=("question",),
@@ -131,7 +131,7 @@ TEMPLATES: list[PromptTemplate] = [
         label_uz="Patologiyani belgilash (bounding box)",
         description=(
             "Topilmani rasmda ramka bilan belgilaydi. Ishonchli natija uchun "
-            "MedGemma 1.5 kerak (IoU 38.0 vs 3.1)."
+            "1.5 versiyasi kerak (IoU 38.0 vs 3.1)."
         ),
         system=CAUTIOUS_SYSTEM,
         template=(

@@ -186,7 +186,7 @@ def deidentify_dataset(
         ds.PatientName = ds.PatientID
 
     ds.PatientIdentityRemoved = "YES"
-    ds.DeidentificationMethod = "MedGemma Radiology Lab / PS3.15 Basic Profile (subset)"
+    ds.DeidentificationMethod = "AviRadiology AI / PS3.15 Basic Profile (subset)"
 
     # Private tags can carry anything a vendor felt like storing.
     ds.remove_private_tags()

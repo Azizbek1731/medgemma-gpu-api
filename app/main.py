@@ -1,4 +1,4 @@
-"""FastAPI application: ingest DICOM, render frames, run MedGemma, score the output."""
+"""FastAPI application: ingest DICOM, render frames, run the model, score the output."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ from .engines import (
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s: %(message)s"
 )
-log = logging.getLogger("medgemma-lab")
+log = logging.getLogger("aviradiology-ai")
 
 
 # DIQQAT: /docs va /openapi.json ATAYLAB o'chirilgan. Ular endpoint ro'yxatini
@@ -43,7 +43,7 @@ log = logging.getLogger("medgemma-lab")
 _docs = "/docs" if os.getenv("MG_ENABLE_DOCS", "").strip() in {"1", "true", "yes"} else None
 
 app = FastAPI(
-    title="MedGemma GPU API",
+    title="AviRadiology AI GPU API",
     version="1.0.0",
     docs_url=_docs,
     redoc_url=None,

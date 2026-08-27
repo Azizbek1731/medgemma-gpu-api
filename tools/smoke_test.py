@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MedGemma GPU API — uchidan-uchiga tekshiruv.
+AviRadiology AI GPU API — uchidan-uchiga tekshiruv.
 
 Yangi mashinada servis TO'G'RI ishlayotganini tasdiqlaydi: autentifikatsiya,
 DICOM pipeline, GPU inferens va SSE oqimi.
@@ -116,7 +116,7 @@ def multipart(filename: str, payload: bytes) -> tuple[bytes, str]:
 
 
 def main() -> int:
-    print(f"\nMedGemma GPU API — tekshiruv: {BASE}\n")
+    print(f"\nAviRadiology AI GPU API — tekshiruv: {BASE}\n")
 
     # 1. Servis javob beradimi (autentifikatsiyasiz ochiq yo'l)
     print("1 · Ulanish")

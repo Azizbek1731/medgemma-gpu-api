@@ -3,7 +3,7 @@ API kalit autentifikatsiyasi.
 
 NIMA UCHUN KERAK
 Bu servis internetga ochiladi va unga BEMOR TASVIRLARI yuboriladi. Manba
-loyihada (MedGemma Radiology Lab) autentifikatsiya umuman yo'q edi — u bitta
+loyihada autentifikatsiya umuman yo'q edi — u bitta
 ishonchli foydalanuvchi uchun lokal asbob edi. Ochiq domenda esa himoyasiz
 qoldirilsa, har kim DICOM yuklashi, boshqalarning tekshiruvlarini o'qishi va
 GPU'ni band qilishi mumkin.

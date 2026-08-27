@@ -367,12 +367,12 @@ def localization_warning(model_id: str, modality: str = "") -> str:
     if not model_supports_localization(model_id):
         notes.append(
             "Bu model bounding box uchun o'rgatilmagan — ramkalar ishonchsiz bo'ladi "
-            "(MedGemma 1 4B: IoU 3.1, MedGemma 1.5 4B: IoU 38.0). "
-            "Ishonchli lokalizatsiya uchun medgemma-1.5 kerak."
+            "(1.0 versiyasi: IoU 3.1, 1.5 versiyasi: IoU 38.0). "
+            "Ishonchli lokalizatsiya uchun 1.5 versiyasi kerak."
         )
     if modality and not modality_supports_localization(modality):
         notes.append(
-            f"MedGemma lokalizatsiyasi faqat ko'krak rentgeni (CR/DX) uchun o'rgatilgan "
+            f"Lokalizatsiya faqat ko'krak rentgeni (CR/DX) uchun o'rgatilgan "
             f"va faqat shunda o'lchangan (Chest ImaGenome). {modality.upper()} uchun "
             "ramkalar tasdiqlanmagan — natijani tekshirmasdan ishonmang."
         )

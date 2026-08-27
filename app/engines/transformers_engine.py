@@ -17,10 +17,13 @@ log = logging.getLogger(__name__)
 
 DEFAULT_TORCH_MODEL = "google/medgemma-1.5-4b-it"
 
+# DIQQAT: chapdagi identifikatorlar — HuggingFace'dagi HAQIQIY repo nomlari.
+# Ular o'zgartirilsa model umuman yuklanmaydi. O'ngdagi yorliqlargina
+# foydalanuvchiga ko'rinadi.
 KNOWN_MODELS = [
-    ("google/medgemma-1.5-4b-it", "MedGemma 1.5 4B — eng yangi (CT/MRI 3D, bounding box)"),
-    ("google/medgemma-4b-it", "MedGemma 4B — birinchi versiya"),
-    ("google/medgemma-27b-it", "MedGemma 27B multimodal — 55+ GB, katta GPU kerak"),
+    ("google/medgemma-1.5-4b-it", "AviRadiology AI 1.5 — asosiy (CT/MRI 3D, bounding box)"),
+    ("google/medgemma-4b-it", "AviRadiology AI 1.0 — birinchi versiya"),
+    ("google/medgemma-27b-it", "AviRadiology AI XL — 55+ GB, katta GPU kerak"),
 ]
 
 
@@ -121,7 +124,7 @@ class TransformersEngine(Engine):
         except Exception as exc:  # noqa: BLE001
             raise EngineError(
                 f"Modelni yuklab bo'lmadi ({self.model_id}): {exc}\n"
-                "MedGemma gated model — avval huggingface.co da litsenziyani qabul qiling, "
+                "Model litsenziyalangan (gated) — avval huggingface.co da litsenziyani qabul qiling, "
                 "so'ng `hf auth login` bilan tizimga kiring."
             ) from exc
 

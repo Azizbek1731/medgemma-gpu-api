@@ -1,6 +1,6 @@
-# MedGemma GPU API
+# AviRadiology AI — GPU servisi
 
-MedGemma tibbiy tasvir modelini **GPU'li mashinada** ishga tushirib, uni
+AviRadiology AI tibbiy tasvir modelini **GPU'li mashinada** ishga tushirib, uni
 [AviRadiolog](https://github.com/Azizbek1731/AviRadiolog) platformasiga ulash uchun
 API servisi.
 
@@ -14,15 +14,15 @@ AviRadiolog (brauzer)
 AviRadiolog backend (Django)     ← API kalit SHU YERDA qoladi
       │  X-API-Key + HTTPS
       ▼
-MedGemma GPU API  ←── shu repo, GPU'li mashinada
+AviRadiology AI GPU  ←── shu repo, GPU'li mashinada
       │
       ▼
-   MedGemma model (transformers / CUDA)
+   Model (transformers / CUDA)
 ```
 
-> ⚠️ **Klinik ogohlantirish.** MedGemma klinik qaror qabul qilish uchun tayyor
-> mahsulot emas — Google'ning o'zi ham shuni aytadi. Har qanday xulosa radiolog
-> tekshiruvidan o'tishi shart.
+> ⚠️ **Klinik ogohlantirish.** Bu model klinik qaror qabul qilish uchun tayyor
+> mahsulot emas — model muallifining o'zi ham shuni aytadi. Har qanday xulosa
+> radiolog tekshiruvidan o'tishi shart.
 
 ---
 

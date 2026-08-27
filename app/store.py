@@ -1,7 +1,7 @@
 """SQLite persistence for uploads, inference runs, and radiologist scoring.
 
 The scoring table is the point of the whole exercise: a run you have not graded tells
-you nothing about whether MedGemma is worth wiring into a production pipeline.
+you nothing about whether the model is worth wiring into a production pipeline.
 """
 
 from __future__ import annotations

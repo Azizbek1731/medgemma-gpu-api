@@ -1,3 +1,3 @@
-"""MedGemma Radiology Lab — local-first DICOM evaluation harness for MedGemma."""
+"""AviRadiology AI — DICOM ingest, rendering va inferens servisi."""
 
 __version__ = "1.0.0"

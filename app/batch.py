@@ -1,7 +1,7 @@
 """Whole-study batch analysis.
 
 One ZIP is usually one exam — an MRI study is a dozen series of twenty to forty slices
-each, and MedGemma sees at most a handful of images per request. So a study is analysed
+each, and the model sees at most a handful of images per request. So a study is analysed
 as a *pipeline*: sample or walk each series, run one request per batch of slices, then
 feed every per-series observation into a final text-only synthesis pass that writes the
 consolidated report.
@@ -16,7 +16,7 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass, field
 
-# Rough cost model, fitted to MedGemma 4B (4-bit MLX) on an M-series Mac:
+# Rough cost model, fitted to the 4B model (4-bit MLX) on an M-series Mac:
 # a request costs a fixed overhead plus a per-image term.
 SECONDS_BASE = 4.0
 SECONDS_PER_IMAGE = 3.0
