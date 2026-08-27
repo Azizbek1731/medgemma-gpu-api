@@ -1,0 +1,39 @@
+[Unit]
+Description=MedGemma GPU API (FastAPI + uvicorn)
+Documentation=https://github.com/Azizbek1731/medgemma-gpu-api
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=medgemma
+Group=medgemma
+WorkingDirectory=/srv/medgemma
+
+# Maxfiy o'zgaruvchilar (MG_API_KEY, HF_TOKEN ...). Huquqi 0600 bo'lsin.
+EnvironmentFile=/srv/medgemma/.env
+
+ExecStart=/srv/medgemma/venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8077 \
+    --timeout-keep-alive 75
+
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=90
+
+# --- Himoya (PHI bilan ishlaydigan xizmat) ---
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=false          # GPU qurilmasi kerak (/dev/nvidia*)
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# Yozish faqat ma'lumot va model keshiga
+ReadWritePaths=/srv/medgemma/data /srv/medgemma/models
+
+[Install]
+WantedBy=multi-user.target

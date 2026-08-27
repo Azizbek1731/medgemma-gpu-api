@@ -1,0 +1,31 @@
+# MedGemma GPU API — bog'liqliklar
+#
+# GPU'li mashinada:  pip install -r requirements.txt
+# torch CUDA versiyasini alohida o'rnating (drayveringizga mos):
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+
+# --- Web server ---
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+
+# --- DICOM ---
+pydicom>=3.0
+# Siqilgan transfer syntax dekoderlari (JPEG, JPEG-LS, JPEG2000, RLE).
+# Klinik arxivlarning ko'pi siqilgan bo'ladi — busiz ochilmaydi.
+pylibjpeg>=2.0
+pylibjpeg-libjpeg>=2.1
+pylibjpeg-openjpeg>=2.4
+pylibjpeg-rle>=2.0
+
+# --- Tasvir ---
+numpy>=1.26
+Pillow>=10.3
+
+# --- Model (GPU) ---
+torch>=2.4
+transformers>=4.50
+accelerate>=0.33
+
+# --- Utils ---
+python-dotenv>=1.0
