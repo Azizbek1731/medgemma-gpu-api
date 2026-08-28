@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import shutil
+import zipfile
 import time
 from pathlib import Path
 from typing import Any, Iterator
@@ -256,6 +257,91 @@ def api_series_detail(
             for i, inst in enumerate(series["instances"])
         ],
     }
+
+
+class _ZipSink(io.RawIOBase):
+    """
+    ZipFile uchun seek qilinmaydigan yozuv oqimi.
+
+    Yozilgan baytlarni to'plab turadi va `drain()` ularni berib, ichkarini
+    bo'shatadi. `tell()` esa JAMI yozilgan hajmni qaytaradi — ZipFile
+    kataloq o'rinlarini shunga qarab hisoblaydi, shuning uchun u
+    bo'shatishdan keyin ham to'g'ri qoladi.
+    """
+
+    def __init__(self) -> None:
+        self._chunks: list[bytes] = []
+        self._pos = 0
+
+    def writable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return False
+
+    def tell(self) -> int:
+        return self._pos
+
+    def write(self, data) -> int:  # type: ignore[override]
+        b = bytes(data)
+        self._chunks.append(b)
+        self._pos += len(b)
+        return len(b)
+
+    def drain(self) -> bytes:
+        out = b"".join(self._chunks)
+        self._chunks.clear()
+        return out
+
+
+@app.get("/api/uploads/{upload_id}/archive")
+def api_download_archive(upload_id: str) -> StreamingResponse:
+    """
+    Yuklamaning DICOM fayllarini ZIP qilib qaytaradi.
+
+    NIMA UCHUN KERAK
+    Viewer kadrlarni SHIFOKORNING KOMPYUTERIDA chizadi — bu servis tunnel
+    orqasida turgani uchun har bir kadr uchun ~1 sekund ketardi. Yangi arxiv
+    tashlanganda fayl brauzerda bor, lekin ILGARI yuklangan arxivni ochganda
+    yo'q. Shu endpoint aynan o'sha holat uchun: arxiv BIR MARTA yuklab
+    olinadi, keyin barcha kadrlar lokal chiziladi.
+
+    Asl ZIP ochilgandan keyin o'chiriladi (`upload_archive`), shuning uchun
+    ochilgan fayllardan qayta yig'iladi. Siqish YO'Q (ZIP_STORED): DICOM
+    allaqachon siqilgan bo'ladi va qayta siqish faqat CPU yeydi.
+    """
+    up = _upload_or_404(upload_id)
+    root = Path(up["path"])
+    if not root.exists():
+        raise HTTPException(404, "Arxiv fayllari topilmadi.")
+
+    files = sorted(p for p in root.rglob("*") if p.is_file())
+    if not files:
+        raise HTTPException(404, "Arxivda fayl yo'q.")
+
+    def generate() -> Iterator[bytes]:
+        # BytesIO ga yozib, keyin uni tozalash MUMKIN EMAS: ZipFile o'z
+        # o'rnini (`tell`) kuzatib boradi va tozalangan buferda o'sha
+        # o'ringacha nol bilan to'ldiradi — 24 MB arxiv 946 MB bo'lib
+        # chiqqan edi. Shuning uchun SEEK QILINMAYDIGAN oqim ishlatiladi:
+        # ZipFile bunday oqimda to'g'ri ishlaydi (data descriptor yozadi),
+        # biz esa yozilgan baytlarni darhol uzatib yuboramiz.
+        stream = _ZipSink()
+        with zipfile.ZipFile(stream, "w", zipfile.ZIP_STORED) as zf:
+            for f in files:
+                zf.write(f, arcname=str(f.relative_to(root)))
+                chunk = stream.drain()
+                if chunk:
+                    yield chunk
+        tail = stream.drain()
+        if tail:
+            yield tail
+
+    return StreamingResponse(
+        generate(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{upload_id}.zip"'},
+    )
 
 
 # --------------------------------------------------------------------------------------
