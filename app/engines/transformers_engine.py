@@ -46,7 +46,7 @@ def _pick_device() -> tuple[str, str]:
 
 class TransformersEngine(Engine):
     key = "transformers"
-    label = "Transformers (PyTorch — CUDA / MPS / CPU, lokal)"
+    label = "AviRadiology AI (GPU)"
     requires_network = False
     default_model = DEFAULT_TORCH_MODEL
 
