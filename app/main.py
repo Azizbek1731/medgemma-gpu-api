@@ -128,7 +128,13 @@ async def upload_archive(file: UploadFile = File(...), label: str = Query("")) -
     dest = UPLOAD_DIR / upload_id
     dest.mkdir(parents=True, exist_ok=True)
 
-    archive = dest / "_archive.zip"
+    # DIQQAT: fayl nomi kiruvchi fayl turiga qarab tanlanadi.
+    # Ilgari hamma yuklama "_archive.zip" nomi bilan saqlanardi va quyidagi
+    # `.zip` tekshiruvi DOIM rost bo'lardi — bitta .dcm fayl yuklash tarmog'i
+    # hech qachon bajarilmay, har safar "Arxivni ochib bo'lmadi" (400) berardi.
+    incoming = (file.filename or "").lower()
+    is_zip = incoming.endswith(".zip") or not incoming.endswith(".dcm")
+    archive = dest / ("_archive.zip" if is_zip else "_instance.dcm")
     size = 0
     limit = settings.max_upload_mb * 1024 * 1024
     try:
@@ -145,7 +151,7 @@ async def upload_archive(file: UploadFile = File(...), label: str = Query("")) -
     extracted = dest / "files"
     report = dicom_io.IngestReport()
     try:
-        if archive.name.lower().endswith(".zip") or file.filename.lower().endswith(".zip"):
+        if is_zip:
             dicom_io.extract_archive(archive, extracted, settings.max_files_per_zip)
         else:
             extracted.mkdir(parents=True, exist_ok=True)
@@ -156,7 +162,18 @@ async def upload_archive(file: UploadFile = File(...), label: str = Query("")) -
     finally:
         archive.unlink(missing_ok=True)
 
-    studies = dicom_io.index_directory(extracted, report)
+    # index_directory buzuq DICOM'da xato berishi mumkin (masalan
+    # ImagePositionPatient VM=1). Ilgari bu xato ushlanmasdi: bazada yozuv
+    # yaratilmasdi, lekin OCHILGAN BEMOR FAYLLARI diskda qolardi. Tozalash
+    # esa faqat bazadagi yozuvlar bo'ylab yuradi — ya'ni bunday papka
+    # hech qachon o'chmasdi.
+    try:
+        studies = dicom_io.index_directory(extracted, report)
+    except Exception as exc:  # noqa: BLE001
+        shutil.rmtree(dest, ignore_errors=True)
+        log.exception("Arxivni indekslash muvaffaqiyatsiz: %s", upload_id)
+        raise HTTPException(400, f"Arxivni o'qib bo'lmadi: {exc}") from exc
+
     if not studies:
         shutil.rmtree(dest, ignore_errors=True)
         raise HTTPException(
@@ -274,7 +291,10 @@ def _render_frame_of(
             max_px=px,
         )
     except Exception as exc:  # noqa: BLE001
-        log.exception("Render failed for %s", path)
+        # Faqat fayl NOMI, to'liq yo'l emas: PACS eksportlarida yo'lda bemor
+        # ismi yoki MRN bo'lishi mumkin, ilova logi esa PHI saqlash muddati
+        # qamrovidan tashqarida turadi.
+        log.exception("Kadrni render qilib bo'lmadi (%s)", path.name)
         raise HTTPException(500, f"Tasvirni ochib bo'lmadi: {exc}") from exc
 
 
@@ -545,6 +565,11 @@ def api_infer(payload: dict = Body(...)) -> StreamingResponse:
                 "system": system_prompt,
                 "prompt": user_prompt,
                 "remote": is_remote(engine.key),
+                # Shifokor "klinik kontekst" maydoniga bemor ismini yoki MRN
+                # ni yopishtirishi mumkin — u to'g'ridan-to'g'ri promptga,
+                # ya'ni modelga ketadi. deid.scan_free_text buni topadi,
+                # lekin ilgari HECH QAYERDA chaqirilmasdi.
+                "context_warnings": deid.scan_free_text(extra_context),
             },
         )
         try:

@@ -66,9 +66,17 @@ sudo mkdir -p /srv/medgemma && sudo chown medgemma: /srv/medgemma
 sudo -u medgemma git clone https://github.com/Azizbek1731/medgemma-gpu-api.git /srv/medgemma
 cd /srv/medgemma
 
+# Ubuntu'da venv alohida paketda — busiz `python3 -m venv` xato beradi
+sudo apt-get update && sudo apt-get install -y python3-venv
+
 sudo -u medgemma python3 -m venv venv
 sudo -u medgemma venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cu124
 sudo -u medgemma venv/bin/pip install -r requirements.txt
+
+# data/ va models/ repoda yo'q (.gitignore da). Unit faylidagi ReadWritePaths
+# mavjud bo'lmagan yo'lni ko'rsa systemd mount namespace'ni qura olmaydi va
+# servis 226/NAMESPACE bilan cheksiz qayta urinadi — shuning uchun oldindan yaratamiz.
+sudo -u medgemma mkdir -p /srv/medgemma/data /srv/medgemma/models
 
 sudo -u medgemma cp .env.example .env && sudo chmod 600 .env   # to'ldiring
 sudo install -m 0644 deploy/systemd/medgemma-api.service /etc/systemd/system/
@@ -98,6 +106,11 @@ Qolganlari `.env.example` da izohi bilan. Diqqat qiling:
 | `MG_MAX_UPLOAD_MB` | `512` | Ochiq endpointda diskni to'ldirishning oldini oladi |
 | `MG_ENABLE_DOCS` | o'chiq | `/docs` va `/openapi.json` yopiq — keraksiz hujum yuzasi |
 
+**Model keshi (`HF_HOME`).** systemd unit'i uni `/srv/medgemma/models` ga o'rnatadi,
+Docker esa `/models` volume'iga. Standart yo'l (`$HOME/.cache/huggingface`)
+`ProtectSystem=strict` ostida read-only bo'lgani uchun og'irliklar yuklanmaydi.
+Boshqa papkani tanlasangiz, unit'dagi `ReadWritePaths` ni ham birga o'zgartiring.
+
 ---
 
 ## 4. Domen va TLS
@@ -116,18 +129,46 @@ sudo certbot --nginx -d ai.example.uz
 **Qo'shimcha himoya (tavsiya):** faqat AviRadiolog serverining IP'sini kiriting:
 
 ```bash
+# ⚠️ ENG BIRINCHI: SSH'ni oching. ufw yoqilgach standart siyosat kiruvchi
+# ulanishlarni rad etadi — bu qadamsiz serverga masofadan kira olmay qolasiz.
+sudo ufw allow OpenSSH
+
+# Tartib muhim: ufw birinchi mos kelgan qoidani qo'llaydi, shuning uchun
+# ruxsat rad etishdan OLDIN turishi kerak.
 sudo ufw allow from <AVIRADIOLOG_IP> to any port 443 proto tcp
 sudo ufw deny 443
+
+# Let's Encrypt sertifikatni HTTP-01 sinovi bilan yangilaydi, ya'ni 80-port
+# INTERNETDAN ochiq turishi shart. Yopilsa `certbot renew` jimgina yiqiladi
+# va sertifikat 90 kundan keyin muddati tugab, servis ishlamay qoladi.
+sudo ufw allow 80/tcp
+
+# ufw standart holda O'CHIQ — busiz yuqoridagi qoidalar hech narsa qilmaydi
+sudo ufw enable
+sudo ufw status verbose        # "Status: active" ekanini tasdiqlang
 ```
 
 ---
 
 ## 5. Tekshirish
 
+Skript `pydicom` va `numpy` ni talab qiladi — ular tizim python'ida emas, o'rnatish
+paytida yaratilgan muhitda turadi. Shuning uchun aynan o'sha python bilan chaqiring:
+
 ```bash
-python tools/smoke_test.py
-# yoki masofadan:
-MG_URL=https://ai.example.uz MG_API_KEY=... python tools/smoke_test.py
+# Variant B (systemd) — bog'liqliklar venv ichida, kalit esa 0600 huquqli .env da,
+# uni faqat medgemma foydalanuvchisi o'qiy oladi
+cd /srv/medgemma
+sudo -u medgemma venv/bin/python tools/smoke_test.py
+
+# Variant A (Docker) — tools/ konteynerga ko'chirilmaydi, host'da vaqtinchalik muhit kerak.
+# Ubuntu'da venv alohida paketda (§2 dagi kabi), busiz "ensurepip is not available" beradi.
+sudo apt-get install -y python3-venv
+python3 -m venv /tmp/smoke && /tmp/smoke/bin/pip install pydicom numpy
+MG_API_KEY=<.env dagi kalit> /tmp/smoke/bin/python tools/smoke_test.py
+
+# yoki masofadan (pydicom va numpy o'rnatilgan istalgan python bilan):
+MG_URL=https://ai.example.uz MG_API_KEY=... python3 tools/smoke_test.py
 ```
 
 Skript sun'iy DICOM yasab (bemor ma'lumoti kerak emas) quyidagilarni tekshiradi:

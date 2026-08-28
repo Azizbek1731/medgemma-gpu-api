@@ -10,7 +10,14 @@ User=medgemma
 Group=medgemma
 WorkingDirectory=/srv/medgemma
 
+# huggingface_hub standart holda $HOME/.cache/huggingface ga yozadi, ProtectSystem=strict
+# esa uni read-only qiladi — natijada model og'irliklari umuman yuklab olinmaydi.
+# Keshni pastdagi ReadWritePaths ro'yxatidagi yagona yoziladigan papkaga yo'naltiramiz;
+# o'zgartirsangiz ReadWritePaths ni ham birga o'zgartiring.
+Environment=HF_HOME=/srv/medgemma/models
+
 # Maxfiy o'zgaruvchilar (MG_API_KEY, HF_TOKEN ...). Huquqi 0600 bo'lsin.
+# Environment'dan KEYIN o'qiladi, shuning uchun .env dagi qiymat ustun turadi.
 EnvironmentFile=/srv/medgemma/.env
 
 ExecStart=/srv/medgemma/venv/bin/uvicorn app.main:app \
@@ -25,7 +32,10 @@ TimeoutStopSec=90
 # --- Himoya (PHI bilan ishlaydigan xizmat) ---
 NoNewPrivileges=true
 PrivateTmp=true
-PrivateDevices=false          # GPU qurilmasi kerak (/dev/nvidia*)
+# GPU qurilmasi kerak (/dev/nvidia*), shuning uchun yopmaymiz.
+# Izoh ataylab alohida satrda: systemd `Direktiva=qiymat # izoh` shaklini tushunmaydi —
+# izoh qiymatning bir qismi bo'lib qoladi va direktiva e'tiborsiz qolishi mumkin.
+PrivateDevices=false
 ProtectSystem=strict
 ProtectHome=true
 ProtectKernelTunables=true

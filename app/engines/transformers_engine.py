@@ -17,6 +17,11 @@ log = logging.getLogger(__name__)
 
 DEFAULT_TORCH_MODEL = "google/medgemma-1.5-4b-it"
 
+# Bekor qilingan generatsiyani kutish chegarasi. Bayroq qo'yilgach generate()
+# joriy token qadamini tugatib to'xtaydi — bu odatda bir necha yuz millisekund.
+# Chegara faqat oqim osilib qolgan holatda so'rovni abadiy bloklab qo'ymaslik uchun.
+_STOP_JOIN_TIMEOUT_SEC = 30
+
 # DIQQAT: chapdagi identifikatorlar — HuggingFace'dagi HAQIQIY repo nomlari.
 # Ular o'zgartirilsa model umuman yuklanmaydi. O'ngdagi yorliqlargina
 # foydalanuvchiga ko'rinadi.
@@ -59,11 +64,16 @@ class TransformersEngine(Engine):
         try:
             import torch  # noqa: F401
         except ImportError:
-            return False, "torch o'rnatilmagan: pip install -r requirements-torch.txt"
+            # NEGA alohida buyruq: torch CUDA g'ildiragi PyPI'dan emas, drayverga mos
+            # indeksdan olinadi — requirements.txt uni o'rnata olmaydi (README §2).
+            return False, (
+                "torch o'rnatilmagan: "
+                "pip install torch --index-url https://download.pytorch.org/whl/cu124"
+            )
         try:
             import transformers  # noqa: F401
         except ImportError:
-            return False, "transformers o'rnatilmagan: pip install -r requirements-torch.txt"
+            return False, "transformers o'rnatilmagan: pip install -r requirements.txt"
         device, dtype = _pick_device()
         if device == "cpu":
             return True, "Faqat CPU topildi — juda sekin bo'ladi (rasm uchun bir necha daqiqa)."
@@ -164,7 +174,7 @@ class TransformersEngine(Engine):
             self.load()
 
         import torch
-        from transformers import TextIteratorStreamer
+        from transformers import StoppingCriteria, StoppingCriteriaList, TextIteratorStreamer
 
         messages = self._build_messages(req)
         inputs = self._processor.apply_chat_template(
@@ -190,6 +200,22 @@ class TransformersEngine(Engine):
         if req.temperature > 0:
             gen_kwargs["temperature"] = req.temperature
 
+        # NEGA bekor qilish bayrog'i kerak: iste'molchi oqimni yarmida tashlab
+        # ketishi mumkin (batch bekor qilindi yoki mijoz uzildi). O'zi bilan
+        # `generate()` bundan xabar topmaydi — u max_new_tokens gacha GPU'da
+        # ishlayveradi. Chaqiruvchi esa shu payt INFERENCE_LOCK ni bo'shatib
+        # keyingi so'rovni boshlaydi, natijada tashlab ketilgan va yangi
+        # generatsiya bitta GPU'ni talashadi (ikkalasi sekinlashadi yoki VRAM tugaydi).
+        cancel = threading.Event()
+
+        class _AbandonedByConsumer(StoppingCriteria):
+            # generate() buni har bir token qadamidan keyin so'raydi, shuning uchun
+            # bekor qilish eng ko'pi bilan bitta qadam ichida kuchga kiradi.
+            def __call__(self, input_ids, scores, **kwargs) -> bool:  # noqa: ANN001
+                return cancel.is_set()
+
+        gen_kwargs["stopping_criteria"] = StoppingCriteriaList([_AbandonedByConsumer()])
+
         error: list[BaseException] = []
 
         def _run() -> None:
@@ -203,9 +229,23 @@ class TransformersEngine(Engine):
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
 
-        for text in streamer:
-            if text:
-                yield text
-        thread.join(timeout=5)
+        try:
+            for text in streamer:
+                if text:
+                    yield text
+        finally:
+            # Oqim qanday tugashidan qat'i nazar — normal yakun, xato yoki
+            # tashlab ketilganda kelgan GeneratorExit — generatsiya haqiqatan
+            # to'xtaganini shu yerda kutamiz. Chaqiruvchidagi `with generation_slot()`
+            # shu `finally` dan KEYIN yopiladi, ya'ni lock GPU bo'shagach bo'shaydi.
+            cancel.set()
+            thread.join(timeout=_STOP_JOIN_TIMEOUT_SEC)
+            if thread.is_alive():
+                # Osilib qolgan oqim uchun so'rovni cheksiz ushlab turmaymiz, lekin
+                # jimgina o'tkazib yuborsak GPU nega bandligi keyin tushunarsiz bo'ladi.
+                log.warning(
+                    "Generatsiya %s soniyada to'xtamadi — oqim fonda davom etmoqda.",
+                    _STOP_JOIN_TIMEOUT_SEC,
+                )
         if error:
             raise EngineError(f"Generatsiya xatosi: {error[0]}") from error[0]

@@ -17,6 +17,11 @@ DIZAYN
 - Solishtirish `hmac.compare_digest` bilan — vaqt bo'yicha hujumdan himoya.
 - Bir nechta kalit qo'llab-quvvatlanadi (vergul bilan): kalitni almashtirganda
   eskisini bir muddat qoldirib turish uchun.
+- CORS preflight (OPTIONS) uchun ISTISNO YO'Q. Bu servisga brauzer
+  to'g'ridan-to'g'ri murojaat qilmaydi — barcha so'rovlar AviRadiolog'ning
+  Django proksisidan keladi (README §6), va ilovada CORSMiddleware ham
+  sozlanmagan, ya'ni preflight umuman bo'lmaydi. Istisno qoldirilsa esa
+  kalitsiz odam OPTIONS bilan qaysi yo'llar borligini paypaslab bilib olardi.
 """
 from __future__ import annotations
 
@@ -61,8 +66,7 @@ class ApiKeyMiddleware:
         path = scope.get("path", "")
         method = scope.get("method", "")
 
-        # CORS preflight — brauzer sarlavha qo'sha olmaydi.
-        if method == "OPTIONS" or path in PUBLIC_PATHS:
+        if path in PUBLIC_PATHS:
             await self.app(scope, receive, send)
             return
 
@@ -74,7 +78,15 @@ class ApiKeyMiddleware:
             return
 
         provided = _header(scope)
-        if not provided or not any(hmac.compare_digest(provided, k) for k in keys):
+        # Solishtirish BAYTLARDA ketadi: `compare_digest` matnlarni faqat ikkalasi
+        # ham ASCII bo'lganda solishtira oladi. Sarlavhada kirill harf yoki emoji
+        # bo'lsa u TypeError chiqarardi, u esa ushlanmay 500 ga aylanardi — ya'ni
+        # javob kodining o'zi kalit haqida ma'lumot berardi. Baytlarda har qanday
+        # kirish bir xil 401 oladi va vaqt bo'yicha himoya ham saqlanadi.
+        provided_bytes = provided.encode("utf-8")
+        if not provided or not any(
+            hmac.compare_digest(provided_bytes, k.encode("utf-8")) for k in keys
+        ):
             # Kalitning o'zi hech qachon logga yozilmaydi.
             log.warning("Ruxsatsiz so'rov: %s %s", method, path)
             await _deny(send, 401, "Noto'g'ri yoki yo'q API kalit.")

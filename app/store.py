@@ -115,6 +115,13 @@ def connect() -> sqlite3.Connection:
             _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
             _conn.row_factory = sqlite3.Row
             _conn.execute("PRAGMA journal_mode=WAL")
+            # Bu bazada bemor ma'lumoti yotadi (tekshiruv UID'lari, manifest,
+            # model xulosasi). Standart holatda SQLite o'chirilgan yozuvni fayl
+            # ichida shundoqligicha qoldiradi — retention tozalab bo'lgandan
+            # keyin ham xom baytlardan tiklab olish mumkin. `secure_delete`
+            # o'sha joylarni nol bilan bosib yozadi: yozish biroz sekinlashadi,
+            # lekin ijaradagi mashinaning diskida PHI qoldig'i qolmaydi.
+            _conn.execute("PRAGMA secure_delete = ON")
             _conn.executescript(SCHEMA)
             _migrate(_conn)
             _conn.commit()
